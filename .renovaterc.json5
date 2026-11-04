@@ -1,0 +1,25 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>alexander-zimmermann/lares//.renovate/sidecarBase.json5"],
+  // Renovate has no native PlatformIO manager. The platform and every library in
+  // platformio.ini carries a trailing `; renovate: datasource=… depName=…` comment
+  // that this manager reads; drop the comment and the dependency stops updating.
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^platformio\\.ini$/"],
+      "matchStrings": [
+        "@\\^?(?<currentValue>[0-9][^\\s;]*)\\s*;\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)",
+      ],
+      "extractVersionTemplate": "^v?(?<version>.+)$",
+      "versioningTemplate": "semver",
+    },
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "platformio deps (non-major)",
+    },
+  ],
+}
