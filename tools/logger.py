@@ -16,14 +16,14 @@ out = sys.argv[2] if len(sys.argv) > 2 else "captures/rx.log"
 
 with serial.Serial(port, 115200, timeout=0.2) as s, open(out, "a", buffering=1) as f:
     f.write(f"--- Start {time.strftime('%H:%M:%S')} ---\n")
-    puffer = b""
+    buffer = b""
     while True:
-        daten = s.read(s.in_waiting or 1)
-        if not daten:
+        data = s.read(s.in_waiting or 1)
+        if not data:
             continue
-        puffer += daten
-        while b"\n" in puffer:                    # write complete lines only
-            zeile, puffer = puffer.split(b"\n", 1)
-            text = zeile.decode("utf-8", "replace").rstrip()
+        buffer += data
+        while b"\n" in buffer:                    # write complete lines only
+            line, buffer = buffer.split(b"\n", 1)
+            text = line.decode("utf-8", "replace").rstrip()
             if text:
                 f.write(f"{time.strftime('%H:%M:%S')} {text}\n")

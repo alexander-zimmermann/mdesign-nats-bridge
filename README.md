@@ -100,7 +100,7 @@ uv venv && uv pip install numpy scipy pyserial
 | `logger.py` | write the ESP32's serial output with timestamps to a file |
 | `send.py` | send one firmware command and show what comes back |
 | `status.py` | follow status telegrams and show only the bytes that change |
-| `stufen.py` | show the remote's command frames with their level byte |
+| `levels.py` | show the remote's command frames with their level byte |
 | `checksum.py` | check or compute a checksum; self-test against the logs |
 
 Recordings and logs are not in the repo. The tools expect them in `captures/`,

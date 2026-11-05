@@ -6,7 +6,7 @@ rtl_sdr delivers uint8 (offset binary) while the analysis scripts expect
 int16, so the samples are converted on write.
 
 Usage:  python3 tools/capture.py ON
-        python3 tools/capture.py UP --dauer 8
+        python3 tools/capture.py UP --duration 8
 """
 import argparse
 import subprocess
@@ -28,7 +28,7 @@ CAPTURES = Path(__file__).resolve().parent.parent / "captures"
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("name", help="command label, e.g. ON / OFF / UP / DOWN")
-    ap.add_argument("--dauer", type=float, default=6.0, help="seconds (default 6)")
+    ap.add_argument("--duration", type=float, default=6.0, help="seconds (default 6)")
     ap.add_argument("--gain", type=float, default=GAIN)
     ap.add_argument("--fc", type=float, default=FC, help="centre frequency in Hz")
     args = ap.parse_args()
@@ -37,11 +37,11 @@ def main():
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out = CAPTURES / f"Kamin-{args.name}-{stamp}.complex16s"
 
-    n_samples = int(FS * args.dauer)
+    n_samples = int(FS * args.duration)
     cmd = ["rtl_sdr", "-f", str(int(args.fc)), "-s", str(FS),
            "-g", str(args.gain), "-n", str(n_samples), "-"]
 
-    print(f"Recording {args.dauer:.0f}s @ {args.fc/1e6:.2f} MHz, gain {args.gain:.0f} dB -> {out.name}")
+    print(f"Recording {args.duration:.0f}s @ {args.fc/1e6:.2f} MHz, gain {args.gain:.0f} dB -> {out.name}")
     print("Press the key several times now (3-4x, ~1s apart).\n")
 
     # Write to a raw file instead of a pipe: it survives Ctrl+C, and the

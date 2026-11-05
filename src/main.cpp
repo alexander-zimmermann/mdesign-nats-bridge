@@ -106,7 +106,7 @@ const uint8_t REGS[][2] = {
 // exactly one. Sending therefore appends one byte whose top bit carries the
 // check bit; the receiver ignores the rest. Sending only the whole bytes
 // leaves noise there, and the receiver drops about half of the telegrams.
-struct Telegramm {
+struct Telegram {
   uint8_t len;
   uint8_t slot;
   uint8_t b[19];
@@ -124,7 +124,7 @@ struct Telegramm {
 // sets them from the running counter and recomputes the checksum.
 // Template: a recorded remote sequence that switches the fire on.
 // clang-format off
-const Telegramm SEQ_AN[] = {
+const Telegram SEQ_ON[] = {
   {19,0,{0xF7,0xB9,0x8F,0xCC,0x78,0x09,0x99,0xEF,0x3C,0x2D,0x69,0x08,0xBC,0xC2,0xAB,0xFA,0xAA,0x3F,0x5E}}, // idle
   {19,0,{0xF7,0xB9,0x8F,0x4C,0x78,0x09,0x99,0xEF,0x3C,0x2D,0x69,0x08,0xBC,0xC2,0xAB,0xB7,0x67,0x93,0x75}}, // level 15
   {16,1,{0xF9,0x39,0x8C,0xCC,0x78,0x09,0x99,0xEF,0x3C,0x2D,0xE8,0xE2,0xB5,0x0E,0x52,0x6A}},                // ON
@@ -135,7 +135,7 @@ const Telegramm SEQ_AN[] = {
 // only the preceding f7b9 telegram, which carries the live reading, shows that
 // the sender is in sync. With a single idle telegram up front, only the first
 // switch command takes effect.
-const Telegramm SEQ_AUS[] = {
+const Telegram SEQ_OFF[] = {
   {19,0,{0xF7,0xB9,0x8E,0xCC,0x78,0x09,0x99,0xEF,0x3C,0x2D,0x69,0x08,0xBC,0x8B,0x2B,0xFA,0xAA,0x40,0x44}}, // idle
   {16,0,{0xF9,0x39,0x8E,0x4C,0x78,0x09,0x99,0xEF,0x3C,0x2D,0xE9,0xE3,0xAC,0xBA,0x33,0x06}},                // side burner off
   {19,1,{0xF7,0xB9,0x8F,0xCC,0x78,0x09,0x99,0xEF,0x3C,0x2D,0x69,0x08,0xBC,0x8B,0x2B,0xFA,0xAA,0x41,0x42}}, // idle
@@ -144,13 +144,13 @@ const Telegramm SEQ_AUS[] = {
   {16,2,{0xF9,0x39,0x8C,0x4C,0x78,0x09,0x99,0xEF,0x3C,0x2D,0xEC,0x66,0x5F,0x04,0xD4,0x36}},                // pilot off
 };
 // clang-format on
-constexpr uint8_t N_SEQ_AN = sizeof(SEQ_AN) / sizeof(SEQ_AN[0]);
-constexpr uint8_t N_SEQ_AUS = sizeof(SEQ_AUS) / sizeof(SEQ_AUS[0]);
+constexpr uint8_t N_SEQ_ON = sizeof(SEQ_ON) / sizeof(SEQ_ON[0]);
+constexpr uint8_t N_SEQ_OFF = sizeof(SEQ_OFF) / sizeof(SEQ_OFF[0]);
 
 // Power levels 1..15. Stepping down and up yields the same values, so the
 // encoding is absolute. Index 0 = level 1. Byte 17 carries the set value.
 // clang-format off
-const Telegramm STUFEN[] = {
+const Telegram LEVELS[] = {
   {19,0,{0xF7,0xB9,0x8E,0x4C,0x78,0x09,0x99,0xEF,0x3C,0x2D,0x69,0x08,0xBD,0x44,0xAB,0x85,0x55,0x86,0x99}},  // level  1
   {19,0,{0xF7,0xB9,0x8C,0x4C,0x78,0x09,0x99,0xEF,0x3C,0x2D,0x69,0x08,0xBD,0x44,0xAB,0x86,0xD6,0x0D,0x9C}},  // level  2
   {19,0,{0xF7,0xB9,0x8E,0x4C,0x78,0x09,0x99,0xEF,0x3C,0x2D,0x69,0x08,0xBD,0x53,0x2B,0x82,0x52,0xB2,0x8D}},  // level  3
@@ -168,7 +168,7 @@ const Telegramm STUFEN[] = {
   {19,0,{0xF7,0xB9,0x8E,0x4C,0x78,0x09,0x99,0xEF,0x3C,0x2D,0x69,0x08,0xBC,0xA2,0xAB,0xB7,0x67,0x92,0x62}},  // level 15
 };
 // clang-format on
-constexpr uint8_t N_STUFEN = sizeof(STUFEN) / sizeof(STUFEN[0]);
+constexpr uint8_t N_LEVELS = sizeof(LEVELS) / sizeof(LEVELS[0]);
 
 // ---- SPI basics -------------------------------------------------------------
 static void csLow() {
@@ -245,7 +245,7 @@ static void configure() {
 // ---- Runtime ----------------------------------------------------------------
 constexpr int RSSI_MIN = -90;  // dBm; anything weaker is noise
 uint32_t rxNoise = 0;          // dropped false triggers (too weak)
-uint32_t rxKaputt = 0;         // dropped for a bad checksum
+uint32_t rxCorrupt = 0;        // dropped for a bad checksum
 bool rxMode = false;
 
 static void startRx() {
@@ -279,23 +279,23 @@ static inline uint16_t crcBit(uint16_t c, uint8_t bit) {
   c <<= 1;
   return (top ^ bit) ? (c ^ CRC_POLY) : c;
 }
-static uint16_t konstante(uint8_t len) {  // len = payload without sync
+static uint16_t checksumConstant(uint8_t len) {  // len = payload without sync
   return len == 19 ? 0x4993 : len == 16 ? 0xEDDD : 0x3AAE;
 }
 
 // Sets the two checksum bytes so the telegram with an appended 0 bit checks
 // out. Returns false if there is no solution; then nothing is sent rather than
 // an invalid telegram.
-static bool pruefsummeSetzen(uint8_t *p, uint8_t len) {
-  uint16_t vorne = CRC_INIT;
-  vorne = crcByte(vorne, 0x69);
-  vorne = crcByte(vorne, 0xC8);
-  for (uint8_t i = 0; i + 2 < len; i++) vorne = crcByte(vorne, p[i]);
-  const uint16_t ziel = konstante(len);
+static bool setChecksum(uint8_t *p, uint8_t len) {
+  uint16_t prefix = CRC_INIT;
+  prefix = crcByte(prefix, 0x69);
+  prefix = crcByte(prefix, 0xC8);
+  for (uint8_t i = 0; i + 2 < len; i++) prefix = crcByte(prefix, p[i]);
+  const uint16_t target = checksumConstant(len);
   for (uint16_t hi = 0; hi < 256; hi++) {
-    uint16_t c1 = crcByte(vorne, (uint8_t)hi);
+    uint16_t c1 = crcByte(prefix, (uint8_t)hi);
     for (uint16_t lo = 0; lo < 256; lo++) {
-      if (crcBit(crcByte(c1, (uint8_t)lo), 0) == ziel) {
+      if (crcBit(crcByte(c1, (uint8_t)lo), 0) == target) {
         p[len - 2] = (uint8_t)hi;
         p[len - 1] = (uint8_t)lo;
         return true;
@@ -308,18 +308,18 @@ static bool pruefsummeSetzen(uint8_t *p, uint8_t len) {
 // Checks a received telegram. Returns the payload length, or 0 for a bad
 // checksum or an unknown address. Required: a single bit error in the reading
 // field would poison the fire's state through the live patch.
-static uint8_t pruefsummeOk(const uint8_t *buf) {
+static uint8_t checksumOk(const uint8_t *buf) {
   uint8_t len;
-  uint16_t ziel;
+  uint16_t target;
   if (buf[0] == 0xF7 && buf[1] == 0xB9) {
     len = 19;
-    ziel = 0x4993;
+    target = 0x4993;
   } else if (buf[0] == 0xF9 && buf[1] == 0x39) {
     len = 16;
-    ziel = 0xEDDD;
+    target = 0xEDDD;
   } else if (buf[0] == 0xFA && buf[1] == 0x39) {
     len = 14;
-    ziel = 0x3AAE;
+    target = 0x3AAE;
   } else
     return 0;
   uint16_t c = CRC_INIT;
@@ -327,14 +327,14 @@ static uint8_t pruefsummeOk(const uint8_t *buf) {
   c = crcByte(c, 0xC8);
   for (uint8_t i = 0; i < len; i++) c = crcByte(c, buf[i]);
   c = crcBit(c, (buf[len] >> 7) & 1);
-  return (c == ziel) ? len : 0;
+  return (c == target) ? len : 0;
 }
 
 // ---- Sending ----------------------------------------------------------------
 // The remote assigns one sequence number per slot (8c..8f, cyclic) and never
 // repeats it back to back. The same counter runs here, so our telegrams do not
 // look like repeats.
-uint8_t seqZaehler = 0x8C;
+uint8_t seqCounter = 0x8C;
 
 // PKTLEN applies to sending and receiving alike. The telegrams differ in
 // length, so it is set before each send and restored to the receive value
@@ -342,53 +342,53 @@ uint8_t seqZaehler = 0x8C;
 // (0 here), the receiver ignores the rest.
 // One telegram per sequence position, like the remote: the toggle bit marks
 // the position within a slot, not a repeat.
-constexpr uint8_t WDH = 1;           // sends per telegram
-constexpr uint32_t WDH_PAUSE = 150;  // ms between repeats
+constexpr uint8_t REPEATS = 1;          // sends per telegram
+constexpr uint32_t REPEAT_PAUSE = 150;  // ms between repeats
 
 // Last overheard remote set command, verbatim including the trailing byte.
 // Replaying it unchanged ('v') tests the send chain without any transcription.
-uint8_t mitschnitt[20];
-bool mitschnittOk = false;
-uint8_t mitschnittStufe = 0;
+uint8_t stored[20];
+bool storedOk = false;
+uint8_t storedValue = 0;
 
 // Bytes [12..14] of an f7b9 telegram carry the remote's reading, and the fire
 // mirrors them unchanged in its status telegrams. Sent f7b9 frames get the
 // CURRENT value instead of a stale one from a recording. Presumably the fire
 // executes safety-relevant commands only from a sender in sync with it: it
 // acknowledges OFF commands with a stale reading but does not carry them out.
-uint8_t lebend[3];
-bool lebendOk = false;
-bool lebendPatch = true;  // toggled with 'x' for A/B tests
+uint8_t live[3];
+bool liveOk = false;
+bool livePatch = true;  // toggled with 'x' for A/B tests
 
 // Raw telegram: a recording including the trailing byte, sent completely
 // unchanged (no sequence counter, no recomputed checksum). A control run: if
 // this works, any fault lies in what the firmware changes.
-struct RohTelegramm {
+struct RawTelegram {
   uint8_t len;
   uint8_t b[20];
 };
 // clang-format off
-const RohTelegramm AUS_ROH[] = {
+const RawTelegram OFF_RAW[] = {
   {19,{0xF7,0xB9,0x8F,0xCC,0x78,0x09,0x99,0xEF,0x3C,0x2D,0x69,0x08,0xBC,0xF6,0xAB,0xFA,0xAA,0x2F,0x57,0xF7}},
   {16,{0xF9,0x39,0x8F,0x4C,0x78,0x09,0x99,0xEF,0x3C,0x2D,0xE9,0xE3,0xAC,0xBA,0x73,0x78,0x02}},
   {16,{0xF9,0x39,0x8C,0xCC,0x78,0x09,0x99,0xEF,0x3C,0x2D,0xED,0x67,0x46,0xB0,0x35,0xA6,0x2D}},
   {16,{0xF9,0x39,0x8C,0x4C,0x78,0x09,0x99,0xEF,0x3C,0x2D,0xEC,0x66,0x5F,0x04,0x14,0x34,0xCD}},
 };
 // clang-format on
-constexpr uint8_t N_AUS_ROH = sizeof(AUS_ROH) / sizeof(AUS_ROH[0]);
+constexpr uint8_t N_OFF_RAW = sizeof(OFF_RAW) / sizeof(OFF_RAW[0]);
 
-static void sendFrame(const Telegramm &t, uint8_t seq, const char *name, uint8_t wdh = WDH) {
-  for (uint8_t w = 0; w < wdh; w++) {
+static void sendFrame(const Telegram &t, uint8_t seq, const char *name, uint8_t repeats = REPEATS) {
+  for (uint8_t w = 0; w < repeats; w++) {
     uint8_t f[20];
     memcpy(f, t.b, t.len);
     f[2] = seq;
     if (w & 1) f[3] ^= 0x80;  // flip the toggle bit like the remote
-    if (lebendPatch && lebendOk && f[0] == 0xF7) {
-      f[12] = lebend[0];
-      f[13] = lebend[1];
-      f[14] = lebend[2];
+    if (livePatch && liveOk && f[0] == 0xF7) {
+      f[12] = live[0];
+      f[13] = live[1];
+      f[14] = live[2];
     }
-    if (!pruefsummeSetzen(f, t.len)) {
+    if (!setChecksum(f, t.len)) {
       Serial.printf("%s NOT sent - no valid checksum\n", name);
       return;
     }
@@ -405,15 +405,15 @@ static void sendFrame(const Telegramm &t, uint8_t seq, const char *name, uint8_t
     }
     strobe(SIDLE);
     writeReg(PKTLEN, 0x14);
-    if (w + 1 < wdh) delay(WDH_PAUSE);
+    if (w + 1 < repeats) delay(REPEAT_PAUSE);
   }
-  Serial.printf("%s sent (seq %02x, %u bytes + 1 bit, %ux)\n", name, seq, t.len, wdh);
+  Serial.printf("%s sent (seq %02x, %u bytes + 1 bit, %ux)\n", name, seq, t.len, repeats);
 }
 
 static void pollRx();  // defined below
 
 // Sends a raw telegram completely unchanged, trailing byte included.
-static void sendRoh(const RohTelegramm &t, const char *name) {
+static void sendRoh(const RawTelegram &t, const char *name) {
   rxMode = false;
   strobe(SIDLE);
   strobe(SFTX);
@@ -430,7 +430,7 @@ static void sendRoh(const RohTelegramm &t, const char *name) {
 
 // Keeps receiving during the pause, so the fire's reply telegrams (address
 // fa39) show up between sends.
-static void lauschen(uint32_t ms) {
+static void receiveFor(uint32_t ms) {
   strobe(SIDLE);
   strobe(SFRX);
   strobe(SRX);
@@ -439,18 +439,18 @@ static void lauschen(uint32_t ms) {
   strobe(SIDLE);
 }
 
-static void sendSeq(const Telegramm *seq, uint8_t n, const char *name) {
-  const uint8_t basis = seqZaehler;
+static void sendSeq(const Telegram *seq, uint8_t n, const char *name) {
+  const uint8_t base = seqCounter;
   uint8_t maxSlot = 0;
   for (uint8_t i = 0; i < n; i++) {
     if (seq[i].slot > maxSlot) maxSlot = seq[i].slot;
-    uint8_t s = 0x8C | ((basis + seq[i].slot) & 0x03);
+    uint8_t s = 0x8C | ((base + seq[i].slot) & 0x03);
     char txt[28];
     snprintf(txt, sizeof(txt), "%s %u/%u", name, i + 1, n);
     sendFrame(seq[i], s, txt);
-    if (i + 1 < n) lauschen(300);
+    if (i + 1 < n) receiveFor(300);
   }
-  seqZaehler = 0x8C | ((basis + maxSlot + 1) & 0x03);
+  seqCounter = 0x8C | ((base + maxSlot + 1) & 0x03);
 }
 
 // A 16-bit sync matches random noise about every 2^16 bits, roughly every
@@ -472,24 +472,24 @@ static void pollRx() {
   }
 
   // Only process telegrams with a valid checksum.
-  bool bekannt = (buf[0] == 0xF7 && buf[1] == 0xB9) || (buf[0] == 0xF9 && buf[1] == 0x39) ||
-                 (buf[0] == 0xFA && buf[1] == 0x39);
-  if (bekannt && !pruefsummeOk(buf)) {
-    rxKaputt++;
+  bool known = (buf[0] == 0xF7 && buf[1] == 0xB9) || (buf[0] == 0xF9 && buf[1] == 0x39) ||
+               (buf[0] == 0xFA && buf[1] == 0x39);
+  if (known && !checksumOk(buf)) {
+    rxCorrupt++;
     return;
   }
 
   Serial.printf("RX %4d dBm  69c8", rssi);  // the sync word is not in the FIFO
   for (uint8_t i = 0; i < 20; i++) Serial.printf("%02x", buf[i]);
   if (rxNoise) Serial.printf("   (%lu false triggers", rxNoise);
-  if (rxKaputt) Serial.printf("%s%lu with bit errors", rxNoise ? ", " : "   (", rxKaputt);
-  if (rxNoise || rxKaputt) Serial.print(" dropped)");
+  if (rxCorrupt) Serial.printf("%s%lu with bit errors", rxNoise ? ", " : "   (", rxCorrupt);
+  if (rxNoise || rxCorrupt) Serial.print(" dropped)");
 
   // Remember the remote's last set command for 'v'.
   if (buf[0] == 0xF7 && buf[4] == 0x78 && buf[15] != 0xFA) {
-    memcpy(mitschnitt, buf, 20);
-    mitschnittOk = true;
-    mitschnittStufe = buf[15];
+    memcpy(stored, buf, 20);
+    storedOk = true;
+    storedValue = buf[15];
     Serial.printf("   << stored: remote set command, value %02x", buf[15]);
   }
 
@@ -515,37 +515,37 @@ static void pollRx() {
     // Byte [12] is only ever bd or bc across 800+ recorded frames. Anything else
     // is corrupt: keep sending the last good value so the fire settles on it.
     if (buf[12] == 0xBD || buf[12] == 0xBC) {
-      lebend[0] = buf[12];
-      lebend[1] = buf[13];
-      lebend[2] = buf[14];
-      lebendOk = true;
-    } else if (lebendOk) {
-      Serial.printf("   !! reading [12]=%02x implausible, keeping %02x%02x%02x", buf[12], lebend[0],
-                    lebend[1], lebend[2]);
+      live[0] = buf[12];
+      live[1] = buf[13];
+      live[2] = buf[14];
+      liveOk = true;
+    } else if (liveOk) {
+      Serial.printf("   !! reading [12]=%02x implausible, keeping %02x%02x%02x", buf[12], live[0],
+                    live[1], live[2]);
     }
 
     // Change tracker: every byte that moved since the previous status telegram.
     // Sequence, toggle and checksum change with every packet and are skipped.
-    static uint8_t vorher[19];
-    static bool haveVorher = false;
-    if (haveVorher) {
-      bool erste = true;
+    static uint8_t previous[19];
+    static bool havePrevious = false;
+    if (havePrevious) {
+      bool first = true;
       for (uint8_t i = 0; i < 19; i++) {
         if (i == 2 || i == 3 || i == 17 || i == 18) continue;
-        if (buf[i] == vorher[i]) continue;
-        if (erste) {
+        if (buf[i] == previous[i]) continue;
+        if (first) {
           Serial.print("   CHANGE:");
-          erste = false;
+          first = false;
         }
-        Serial.printf(" [%u] %02x->%02x", i, vorher[i], buf[i]);
+        Serial.printf(" [%u] %02x->%02x", i, previous[i], buf[i]);
       }
     }
-    memcpy(vorher, buf, 19);
-    haveVorher = true;
+    memcpy(previous, buf, 19);
+    havePrevious = true;
   }
   Serial.println();
   rxNoise = 0;
-  rxKaputt = 0;
+  rxCorrupt = 0;
 }
 
 void setup() {
@@ -572,7 +572,7 @@ void setup() {
   Serial.printf(
       "r=receive  1=ON  2=OFF  3=OFF verbatim  a..%c=level 1..%d\n"
       "t=level test  v=replay stored  x=live reading  ?=registers\n",
-      'a' + N_STUFEN - 1, N_STUFEN);
+      'a' + N_LEVELS - 1, N_LEVELS);
   startRx();
 }
 
@@ -580,38 +580,38 @@ void setup() {
 // than its neighbour, so the jump is big enough to see whether a level takes
 // effect at all; between neighbours the valve travel blurs it. The valve
 // takes up to 5 s from level 1 to 15, hence the pause.
-constexpr uint32_t STELLZEIT = 7000;
+constexpr uint32_t SETTLE_TIME = 7000;
 
-static bool abgebrochen() {
+static bool aborted() {
   if (!Serial.available()) return false;
   while (Serial.available()) Serial.read();
   Serial.println("--- aborted ---");
   return true;
 }
 
-static void stufeStellen(uint8_t stufe) {
+static void setLevel(uint8_t level) {
   char name[16];
-  snprintf(name, sizeof(name), "level %u", stufe);
-  sendFrame(STUFEN[stufe - 1], seqZaehler, name);
-  seqZaehler = 0x8C | ((seqZaehler + 1) & 0x03);
+  snprintf(name, sizeof(name), "level %u", level);
+  sendFrame(LEVELS[level - 1], seqCounter, name);
+  seqCounter = 0x8C | ((seqCounter + 1) & 0x03);
 }
 
-static void stufentest() {
+static void levelTest() {
   Serial.printf(
       "\n=== Level test 15-1-14-1-..., %lu ms per step ===\n"
       "Watch: does the flame jump visibly at EVERY level?\n"
       "Any key aborts.\n",
-      STELLZEIT);
-  for (uint8_t s = N_STUFEN; s >= 1; s--) {
+      SETTLE_TIME);
+  for (uint8_t s = N_LEVELS; s >= 1; s--) {
     Serial.printf("\n-- level %u --\n", s);
-    stufeStellen(s);
-    lauschen(STELLZEIT);
-    if (abgebrochen()) return;
+    setLevel(s);
+    receiveFor(SETTLE_TIME);
+    if (aborted()) return;
     if (s == 1) break;  // level 1 is the resting point
     Serial.println("-- back to 1 --");
-    stufeStellen(1);
-    lauschen(STELLZEIT);
-    if (abgebrochen()) return;
+    setLevel(1);
+    receiveFor(SETTLE_TIME);
+    if (aborted()) return;
   }
   Serial.println("\n=== Level test done ===");
 }
@@ -624,54 +624,54 @@ void loop() {
         startRx();
         break;
       case '1':
-        sendSeq(SEQ_AN, N_SEQ_AN, "ON");
+        sendSeq(SEQ_ON, N_SEQ_ON, "ON");
         startRx();
         break;
       case '2':
-        sendSeq(SEQ_AUS, N_SEQ_AUS, "OFF");
+        sendSeq(SEQ_OFF, N_SEQ_OFF, "OFF");
         startRx();
         break;
       case 't':
-        stufentest();
+        levelTest();
         startRx();
         break;
       case '3':  // control run: unchanged recording
         Serial.println("\n--- OFF verbatim (recorded remote frames) ---");
-        for (uint8_t i = 0; i < N_AUS_ROH; i++) {
+        for (uint8_t i = 0; i < N_OFF_RAW; i++) {
           char s2[24];
-          snprintf(s2, sizeof(s2), "OFF-raw %u/%u", i + 1, N_AUS_ROH);
-          sendRoh(AUS_ROH[i], s2);
-          if (i + 1 < N_AUS_ROH) delay(120);
+          snprintf(s2, sizeof(s2), "OFF-raw %u/%u", i + 1, N_OFF_RAW);
+          sendRoh(OFF_RAW[i], s2);
+          if (i + 1 < N_OFF_RAW) delay(120);
         }
         startRx();
         break;
       case 'v':
-        if (!mitschnittOk) {
+        if (!storedOk) {
           Serial.println("nothing stored yet");
           break;
         }
         Serial.printf(
             "\n--- Replaying the stored remote telegram "
             "(value %02x) ---\n",
-            mitschnittStufe);
+            storedValue);
         {
-          RohTelegramm r;
+          RawTelegram r;
           r.len = 19;
-          memcpy(r.b, mitschnitt, 20);
+          memcpy(r.b, stored, 20);
           sendRoh(r, "recording");
         }
         startRx();
         break;
       case 'x':
-        lebendPatch = !lebendPatch;
-        Serial.printf("live reading %s\n", lebendPatch ? "ON" : "OFF");
+        livePatch = !livePatch;
+        Serial.printf("live reading %s\n", livePatch ? "ON" : "OFF");
         break;
       default:
-        if (k >= 'a' && k < char('a' + N_STUFEN)) {  // a = level 1 ... o = level 15
+        if (k >= 'a' && k < char('a' + N_LEVELS)) {  // a = level 1 ... o = level 15
           char name[16];
           snprintf(name, sizeof(name), "level %d", k - 'a' + 1);
-          sendFrame(STUFEN[k - 'a'], seqZaehler, name);
-          seqZaehler = 0x8C | ((seqZaehler + 1) & 0x03);
+          sendFrame(LEVELS[k - 'a'], seqCounter, name);
+          seqCounter = 0x8C | ((seqCounter + 1) & 0x03);
           startRx();
         }
         break;

@@ -16,31 +16,31 @@ import time
 import serial
 
 PORT = "/dev/cu.usbserial-0001"
-befehl = sys.argv[1] if len(sys.argv) > 1 else ""
-dauer = int(sys.argv[2]) if len(sys.argv) > 2 else 45
+command = sys.argv[1] if len(sys.argv) > 1 else ""
+duration = int(sys.argv[2]) if len(sys.argv) > 2 else 45
 
-ZUSTAND = {(0x69, 0x1a): "off", (0x69, 0x5a): "ignition/run-on phase",
-           (0x6b, 0x58): "FLAME ON"}
+STATE = {(0x69, 0x1a): "off", (0x69, 0x5a): "ignition/run-on phase",
+         (0x6b, 0x58): "FLAME ON"}
 
 with serial.Serial(PORT, 115200, timeout=0.2) as s:
     time.sleep(0.3)
     s.reset_input_buffer()
-    if befehl:
-        s.write(befehl.encode())
-        print(f"sent: '{befehl}'  -  listening for {dauer} s\n")
+    if command:
+        s.write(command.encode())
+        print(f"sent: '{command}'  -  listening for {duration} s\n")
     else:
-        print(f"listening for {dauer} s without sending\n")
+        print(f"listening for {duration} s without sending\n")
 
-    ende = time.time() + dauer
-    puffer = b""
-    while time.time() < ende:
-        daten = s.read(s.in_waiting or 1)
-        if not daten:
+    deadline = time.time() + duration
+    buffer = b""
+    while time.time() < deadline:
+        data = s.read(s.in_waiting or 1)
+        if not data:
             continue
-        puffer += daten
-        while b"\n" in puffer:
-            zeile, puffer = puffer.split(b"\n", 1)
-            t = zeile.decode("utf-8", "replace").strip()
+        buffer += data
+        while b"\n" in buffer:
+            line, buffer = buffer.split(b"\n", 1)
+            t = line.decode("utf-8", "replace").strip()
             if not t or len(t) > 200:        # hide boot garbage
                 continue
             info = ""
@@ -49,6 +49,6 @@ with serial.Serial(PORT, 115200, timeout=0.2) as s:
                 h = m.group(1)
                 b = [int(h[i:i+2], 16) for i in range(0, len(h), 2)]
                 if len(b) == 22:
-                    art = "command" if b[6] == 0x78 else "status"
-                    info = f"   [{art}, {ZUSTAND.get((b[12], b[13]), '?')}]"
+                    kind = "command" if b[6] == 0x78 else "status"
+                    info = f"   [{kind}, {STATE.get((b[12], b[13]), '?')}]"
             print(f"{time.strftime('%H:%M:%S')} {t}{info}")

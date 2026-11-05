@@ -15,19 +15,19 @@ import numpy as np
 
 FS = 2_400_000
 FC = 868_200_000      # covers 867.0 .. 869.4 MHz
-TMP = Path("/tmp/kamin-scan.u8")
+TMP = Path("/tmp/fireplace-scan.u8")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dauer", type=float, default=6.0)
+    ap.add_argument("--duration", type=float, default=6.0)
     ap.add_argument("--gain", type=float, default=20.0)
     ap.add_argument("--fc", type=float, default=FC)
     args = ap.parse_args()
 
     cmd = ["rtl_sdr", "-f", str(int(args.fc)), "-s", str(FS),
-           "-g", str(args.gain), "-n", str(int(FS * args.dauer)), str(TMP)]
-    print(f"Scan {args.dauer:.0f}s, {(args.fc-FS/2)/1e6:.2f}..{(args.fc+FS/2)/1e6:.2f} MHz, "
+           "-g", str(args.gain), "-n", str(int(FS * args.duration)), str(TMP)]
+    print(f"Scan {args.duration:.0f}s, {(args.fc-FS/2)/1e6:.2f}..{(args.fc+FS/2)/1e6:.2f} MHz, "
           f"gain {args.gain:.0f} dB")
     print("Press keys several times now.\n")
     subprocess.run(cmd)
