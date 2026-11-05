@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Zeigt aus dem Mitschnitt nur die Kommandoframes des Handsenders mit dem
-Stellwert (Byte 17). Statustelegramme und Rauschen werden ausgeblendet."""
+"""Show only the remote's command frames from a recording, with their set
+value (byte 17). Status telegrams and noise are hidden."""
 import re, sys
 log = sys.argv[1] if len(sys.argv) > 1 else "captures/stufen.log"
 seen = None
@@ -13,11 +13,11 @@ for line in open(log):
     if len(b) < 20:
         continue
     adr = f"{b[2]:02x}{b[3]:02x}"
-    if adr == "f939":                                  # Schaltbefehl AN/AUS
-        print(f"{t}  {rssi:4d}  SCHALT   {h[20:28]}")
+    if adr == "f939":                                  # switch command ON/OFF
+        print(f"{t}  {rssi:4d}  SWITCH   {h[20:28]}")
         continue
-    if adr != "f7b9" or b[6] != 0x78:                  # nur Handsender-Kommandos
+    if adr != "f7b9" or b[6] != 0x78:                  # remote commands only
         continue
     if b[17] != seen:
-        print(f"{t}  {rssi:4d}  Stellwert {b[17]:02x}")
+        print(f"{t}  {rssi:4d}  set value {b[17]:02x}")
         seen = b[17]

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Beobachtet die Statustelegramme des Kaminempfaengers und zeigt nur
-Aenderungen an - so faellt sofort auf, welches Byte auf welche Aktion reagiert.
+"""Watch the fireplace receiver's status telegrams and show only changes,
+so it is obvious which byte reacts to which action.
 
-Die Sequenz- und Toggle-Bytes (4, 5) sowie die Pruefsumme (19-21) aendern sich
-bei jedem Telegramm und werden ausgeblendet; sie tragen keine Zustandsinfo.
+The sequence and toggle bytes (4, 5) and the checksum (19-21) change with
+every telegram and are hidden; they carry no state.
 
-Aufruf:  python3 tools/status.py [logdatei]
-         (liest fortlaufend weiter, wie `tail -f`)
+Usage:  python3 tools/status.py [logfile]
+        (keeps reading, like `tail -f`)
 """
 import re
 import sys
@@ -14,10 +14,10 @@ import time
 
 LOG = sys.argv[1] if len(sys.argv) > 1 else "captures/stufen.log"
 
-# Bytes, die bei jedem Telegramm wechseln und keinen Zustand tragen
+# Bytes that change with every telegram and carry no state
 IGNORIEREN = {0, 1, 2, 3, 4, 5, 19, 20, 21}
 
-# grober Leistungsbereich aus Byte 15, aus dem Stufenlauf abgeleitet
+# Rough power range from byte 15, derived from a level sweep
 BEREICH = {0x44: "1-4", 0x53: "1-4", 0x4d: "4-8", 0x69: "4-8",
            0xb5: "8-10", 0x66: "9-12", 0xbc: "11-13",
            0xa5: "13-15", 0x71: "13-15"}
@@ -29,10 +29,10 @@ def zerlege(h):
 
 def main():
     letzter = None
-    print("Beobachte Statustelegramme - nur Aenderungen werden angezeigt.\n")
-    print("Zeit      RSSI  Byte:  6..11              12 13 14 15 16   Bereich")
+    print("Watching status telegrams - only changes are shown.\n")
+    print("Time      RSSI  Byte:  6..11              12 13 14 15 16   Range")
     with open(LOG) as f:
-        f.seek(0, 2)                      # ans Ende springen, nur Neues lesen
+        f.seek(0, 2)                      # jump to the end, read only new lines
         while True:
             line = f.readline()
             if not line:
@@ -46,19 +46,19 @@ def main():
                 continue
             adr = f"{b[2]:02x}{b[3]:02x}"
             if adr == "f939":
-                print(f"{t}  {rssi:4d}   >>> SCHALTBEFEHL  {m.group(3)[20:28]}")
+                print(f"{t}  {rssi:4d}   >>> SWITCH COMMAND  {m.group(3)[20:28]}")
                 continue
-            if adr != "f7b9" or b[6] != 0x0b:      # nur Statustelegramme
+            if adr != "f7b9" or b[6] != 0x0b:      # status telegrams only
                 continue
 
             kern = tuple(b[i] for i in range(len(b)) if i not in IGNORIEREN)
             if kern == letzter:
-                continue                            # unveraendert, nicht ausgeben
-            # geaenderte Bytes gegenueber dem letzten Stand markieren
+                continue                            # unchanged, skip
+            # mark the bytes that changed since the last state
             diff = ""
             if letzter is not None:
                 stellen = [i for i, (a, c) in enumerate(zip(letzter, kern)) if a != c]
-                diff = "   geaendert an Position " + ",".join(map(str, stellen))
+                diff = "   changed at position " + ",".join(map(str, stellen))
             letzter = kern
 
             rumpf = "".join(f"{b[i]:02x}" for i in range(6, 12))
