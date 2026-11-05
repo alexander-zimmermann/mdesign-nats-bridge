@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Dekodiert alle Aufnahmen mit FESTER Symbolrate (38400 bit/s) und richtet
-jeden Frame am Sync-Wort aus. Nur so sind die Frames untereinander
-vergleichbar - eine pro Burst geschaetzte Rate verschiebt die Bitgrenzen.
+"""Decode all recordings at a FIXED symbol rate (38400 bit/s) and align each
+frame on the sync word. Only then are frames comparable with each other - a
+per-burst estimated rate shifts the bit boundaries.
 
-Aufruf:  .venv/bin/python3 tools/compare.py
-         .venv/bin/python3 tools/compare.py captures/Kamin-HOCH-*.complex16s
+Usage:  .venv/bin/python3 tools/compare.py
+        .venv/bin/python3 tools/compare.py captures/Kamin-<label>-*.complex16s
 """
 import glob
 import sys
@@ -16,7 +16,7 @@ from scipy.signal import firwin, lfilter
 FS = 1_000_000.0
 BAUD = 38_400.0
 SPS = FS / BAUD
-SYNC = "0110100111001000"      # 0x69C8, direkt nach der 1010..-Praambel
+SYNC = "0110100111001000"      # 0x69C8, right after the 1010.. preamble
 
 
 def load(path):
@@ -56,7 +56,7 @@ def demod(iq, s, e):
 
 
 def bits_at_offset(inst, thr, phase):
-    """Bits mit fester Symboldauer, Startphase in Samples."""
+    """Bits at a fixed symbol duration, start phase in samples."""
     n = int((len(inst)-phase)/SPS)
     out = []
     for i in range(n):
@@ -69,20 +69,20 @@ def bits_at_offset(inst, thr, phase):
 
 
 def refine_timing(inst, thr):
-    """Symboldauer und Phase aus allen Flanken des Frames per Regression.
+    """Symbol duration and phase from all edges of the frame by regression.
 
-    Jede Flanke liegt auf einem Vielfachen der Symboldauer; eine Ausgleichs-
-    gerade durch (Symbolindex, Flankenposition) liefert SPS deutlich genauer
-    als eine feste Vorgabe und faengt den Taktdrift ueber den Frame ab.
+    Every edge lies on a multiple of the symbol duration; a least-squares line
+    through (symbol index, edge position) gives SPS far more precisely than a
+    fixed preset and absorbs clock drift across the frame.
     """
     sign = inst > thr
     edges = np.where(np.diff(sign.astype(int)) != 0)[0].astype(float)
     if len(edges) < 8:
         return SPS, 0.0
     sps = SPS
-    for _ in range(3):                       # wenige Iterationen genuegen
+    for _ in range(3):                       # a few iterations suffice
         k = np.round((edges - edges[0]) / sps)
-        keep = np.abs((edges - edges[0]) - k*sps) < sps*0.3   # Ausreisser raus
+        keep = np.abs((edges - edges[0]) - k*sps) < sps*0.3   # drop outliers
         if keep.sum() < 4:
             break
         A = np.vstack([k[keep], np.ones(keep.sum())]).T
@@ -103,10 +103,10 @@ def bits_fixed(inst, thr, sps, phase):
 
 
 def best_frame(inst):
-    """Symbolrate verfeinern, beide Polaritaeten pruefen, am SYNC ausrichten.
+    """Refine the symbol rate, try both polarities, align on SYNC.
 
-    Die FSK-Polaritaet haengt davon ab, auf welcher Seite die Mittenfrequenz
-    geschaetzt wurde - je nach Aufnahme ist das Signal invertiert.
+    The FSK polarity depends on which side the centre frequency was estimated
+    on - depending on the recording, the signal is inverted.
     """
     hi, lo = np.percentile(inst, 85), np.percentile(inst, 15)
     thr = (hi+lo)/2
@@ -126,7 +126,7 @@ def to_hex(bits):
     return bytes(int(bits[i:i+8], 2) for i in range(0, n, 8)).hex()
 
 
-# Aufnahmen mit abweichender Samplerate (die Juni-Erstaufnahme lief mit 500 kHz)
+# Recordings with a different sample rate (the first recording ran at 500 kHz)
 FS_OVERRIDE = {"Kamin-An.complex16s": 500_000.0}
 
 
@@ -145,7 +145,7 @@ def main(paths):
                 frames[cmd].append((s/FS, f))
 
     for cmd in sorted(frames):
-        print(f"\n=== {cmd} ({len(frames[cmd])} Frames mit Sync) ===")
+        print(f"\n=== {cmd} ({len(frames[cmd])} frames with sync) ===")
         hexes = []
         for t, f in frames[cmd]:
             h = to_hex(f)
@@ -155,7 +155,7 @@ def main(paths):
             n = min(len(h) for h in hexes)
             same = "".join("." if len(set(h[i] for h in hexes)) == 1 else "X"
                            for i in range(n))
-            print(f"  konstant: {same}")
+            print(f"  constant: {same}")
 
 
 if __name__ == "__main__":

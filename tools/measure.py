@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Misst Symbolrate und Deviation eines Bursts, statt sie vorzugeben.
+"""Measure symbol rate and deviation of a burst instead of presetting them.
 
-Die Symboldauer kommt aus dem Histogramm der Flankenabstaende: der
-kleinste haeufige Abstand ist ein Symbol (in der 1010..-Praambel wechselt
-das Signal bei jedem Symbol).
+The symbol duration comes from the histogram of edge distances: the smallest
+frequent distance is one symbol (the 1010.. preamble flips on every symbol).
 
-Aufruf:  .venv/bin/python3 tools/measure.py captures/<datei>.complex16s
+Usage:  .venv/bin/python3 tools/measure.py captures/<file>.complex16s
 """
 import sys
 
@@ -52,20 +51,20 @@ def demod(iq, s, e):
 
 
 def symbol_rate(inst, thr):
-    """Kuerzester wiederkehrender Flankenabstand = eine Symboldauer."""
+    """Shortest recurring edge distance = one symbol duration."""
     sign = inst > thr
     edges = np.where(np.diff(sign.astype(int)) != 0)[0]
     if len(edges) < 8:
         return None, None
     gaps = np.diff(edges)
-    gaps = gaps[gaps > 1]                     # Einzel-Sample-Zappler raus
+    gaps = gaps[gaps > 1]                     # drop single-sample glitches
     if len(gaps) == 0:
         return None, None
-    # kleinster Abstand, der oft genug vorkommt (>=10% aller Flanken)
+    # smallest distance that occurs often enough (>=10% of all edges)
     hist = np.bincount(gaps)
     cand = [g for g in range(1, len(hist)) if hist[g] >= 0.10*len(gaps)]
     sps = float(min(cand)) if cand else float(np.percentile(gaps, 10))
-    # verfeinern: Mittelwert aller Abstaende nahe dieser Symboldauer
+    # refine: mean of all distances close to this symbol duration
     near = gaps[np.abs(gaps - sps) < sps*0.35]
     if len(near):
         sps = float(near.mean())
@@ -94,7 +93,7 @@ def to_hex(bits):
 def main(path):
     iq = load(path)
     bursts = find_bursts(iq)
-    print(f"{len(bursts)} Bursts in {path.split('/')[-1]}\n")
+    print(f"{len(bursts)} bursts in {path.split('/')[-1]}\n")
     for k, (s, e, pk) in enumerate(bursts):
         inst, fc = demod(iq, s, e)
         hi, lo = np.percentile(inst, 85), np.percentile(inst, 15)
@@ -102,14 +101,14 @@ def main(path):
         dev = (hi-lo)/2
         sps, gaps = symbol_rate(inst, thr)
         if sps is None:
-            print(f" #{k} @{s/FS*1e3:8.2f}ms  zu wenige Flanken")
+            print(f" #{k} @{s/FS*1e3:8.2f}ms  too few edges")
             continue
         baud = FS/sps
         bits = slice_bits(inst, thr, sps)
         bstr = "".join(map(str, bits))
         print(f" #{k} @{s/FS*1e3:8.2f}ms peak{10*np.log10(pk):5.1f}dB "
               f"fc{fc/1e3:+7.0f}k dev+-{dev/1e3:4.1f}k")
-        print(f"     SPS={sps:.2f} -> Baud={baud:,.0f} bit/s   {len(bits)} Bits")
+        print(f"     SPS={sps:.2f} -> Baud={baud:,.0f} bit/s   {len(bits)} bits")
         print(f"     bits: {bstr[:96]}...")
         print(f"     hex : {to_hex(bits)}")
         print()

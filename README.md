@@ -10,8 +10,6 @@ Protocol work. The firmware is a serial tool: it prints received frames and
 replays recorded on/off and power-level sequences with a fresh sequence number
 and checksum. There is no WiFi and no NATS yet, and nothing on the Lares side.
 
-Code comments and tool output are still in German.
-
 ## Hardware
 
 LILYGO T96 (ESP32) plus an 868 MHz CC1101 board with SMA antenna, wired to VSPI:
@@ -58,7 +56,7 @@ The checksum is a CRC-16 (poly `0x8005`, init `0x2E81`) over sync word, payload,
 checksum and the one trailing bit; the result is a constant per type. Polynomial
 and init come from the reverse engineering of the related Mertik Maxitrol
 868 MHz protocol ([erdebee/mertik-868-protocol](https://github.com/erdebee/mertik-868-protocol)).
-[tools/pruefsumme.py](tools/pruefsumme.py) is the reference and verifies it
+[tools/checksum.py](tools/checksum.py) is the reference and verifies it
 against the recorded logs.
 
 ## Serial commands
@@ -102,8 +100,8 @@ uv venv && uv pip install numpy scipy pyserial
 | `logger.py` | write the ESP32's serial output with timestamps to a file |
 | `send.py` | send one firmware command and show what comes back |
 | `status.py` | follow status telegrams and show only the bytes that change |
-| `stufen.py` | show the remote's command frames with their level byte |
-| `pruefsumme.py` | check or compute a checksum; self-test against the logs |
+| `levels.py` | show the remote's command frames with their level byte |
+| `checksum.py` | check or compute a checksum; self-test against the logs |
 
 Recordings and logs are not in the repo. The tools expect them in `captures/`,
 which is ignored.

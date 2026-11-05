@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Breitband-Scan: nimmt 2,4 MHz um 868,2 MHz auf und zeigt, WO im Band
-waehrend der Aufnahme Bursts auftreten. Dient dazu, die tatsaechliche
-Sendefrequenz des Handsenders zu finden.
+"""Wideband scan: records 2.4 MHz around 868.2 MHz and shows WHERE in the band
+bursts occur during the recording. Used to find the remote's actual
+transmit frequency.
 
-Aufruf:  .venv/bin/python3 tools/scan.py           (6 s, Taste druecken)
-         .venv/bin/python3 tools/scan.py --gain 30
+Usage:  .venv/bin/python3 tools/scan.py           (6 s, press keys)
+        .venv/bin/python3 tools/scan.py --gain 30
 """
 import argparse
 import subprocess
@@ -14,32 +14,32 @@ from pathlib import Path
 import numpy as np
 
 FS = 2_400_000
-FC = 868_200_000      # deckt damit 867,0 .. 869,4 MHz ab
-TMP = Path("/tmp/kamin-scan.u8")
+FC = 868_200_000      # covers 867.0 .. 869.4 MHz
+TMP = Path("/tmp/fireplace-scan.u8")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dauer", type=float, default=6.0)
+    ap.add_argument("--duration", type=float, default=6.0)
     ap.add_argument("--gain", type=float, default=20.0)
     ap.add_argument("--fc", type=float, default=FC)
     args = ap.parse_args()
 
     cmd = ["rtl_sdr", "-f", str(int(args.fc)), "-s", str(FS),
-           "-g", str(args.gain), "-n", str(int(FS * args.dauer)), str(TMP)]
-    print(f"Scan {args.dauer:.0f}s, {(args.fc-FS/2)/1e6:.2f}..{(args.fc+FS/2)/1e6:.2f} MHz, "
-          f"Gain {args.gain:.0f} dB")
-    print("Taste jetzt mehrfach druecken.\n")
+           "-g", str(args.gain), "-n", str(int(FS * args.duration)), str(TMP)]
+    print(f"Scan {args.duration:.0f}s, {(args.fc-FS/2)/1e6:.2f}..{(args.fc+FS/2)/1e6:.2f} MHz, "
+          f"gain {args.gain:.0f} dB")
+    print("Press keys several times now.\n")
     subprocess.run(cmd)
     if not TMP.exists() or TMP.stat().st_size == 0:
-        sys.exit("Keine Samples aufgenommen.")
+        sys.exit("No samples recorded.")
 
     u8 = np.fromfile(TMP, dtype=np.uint8).astype(np.float32) - 127.5
     iq = u8[0::2] + 1j * u8[1::2]
     TMP.unlink()
     clip = np.mean(np.abs(u8) >= 127) * 100
-    print(f"{len(iq)/FS:.1f}s aufgenommen, Clipping {clip:.3f}%"
-          + ("  <-- Gain senken!" if clip > 0.01 else ""))
+    print(f"{len(iq)/FS:.1f}s recorded, clipping {clip:.3f}%"
+          + ("  <-- lower the gain!" if clip > 0.01 else ""))
 
     N = 2048
     n = len(iq) // N
@@ -48,17 +48,17 @@ def main():
     freqs = np.fft.fftshift(np.fft.fftfreq(N, 1/FS))
     t = np.arange(n) * N / FS
 
-    med = np.median(S, axis=0) + 1e-12      # Rauschteppich je Frequenzbin
-    excess = 10*np.log10(S / med)           # Ueberhoehung je Zeit/Frequenz
+    med = np.median(S, axis=0) + 1e-12      # noise floor per frequency bin
+    excess = 10*np.log10(S / med)           # excess per time/frequency
 
-    print(f"\nEreignisse (>15 dB ueber Rauschteppich):")
+    print(f"\nEvents (>15 dB above the noise floor):")
     peak_per_bin = excess.max(axis=0)
     active = np.where(peak_per_bin > 15)[0]
     if len(active) == 0:
-        print("   keine gefunden - Gain erhoehen oder naeher an den Sender.")
+        print("   none found - raise the gain or move closer to the transmitter.")
         return
 
-    # benachbarte Bins zu Kanaelen zusammenfassen
+    # merge neighbouring bins into channels
     groups = np.split(active, np.where(np.diff(active) > 3)[0] + 1)
     for g in groups:
         if len(g) < 2:
@@ -69,8 +69,8 @@ def main():
         times = t[sub > 15]
         print(f"   {f_lo:8.3f} .. {f_hi:8.3f} MHz  "
               f"max +{sub.max():4.1f} dB  "
-              f"{len(times):4d} aktive Zeitfenster  "
-              f"erste {times[0]:.2f}s, letzte {times[-1]:.2f}s")
+              f"{len(times):4d} active time slots  "
+              f"first {times[0]:.2f}s, last {times[-1]:.2f}s")
 
 
 if __name__ == "__main__":
