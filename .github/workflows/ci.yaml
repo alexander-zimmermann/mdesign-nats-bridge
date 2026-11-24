@@ -35,7 +35,7 @@ jobs:
       - name: Check formatting
         run: |
           clang-format --version
-          clang-format --dry-run --Werror $(git ls-files 'src/*.cpp' 'src/*.h')
+          git ls-files -z 'src/*.cpp' 'src/*.h' | xargs -0 clang-format --dry-run --Werror
 
       - name: Build
         run: pio run -e esp32dev
